@@ -9,9 +9,11 @@ export default function App() {
 
   return (
     <ReactLenis root>
-      <RainbowCursor />
-      <TopNav view={view} onChange={setView} />
-      <main className="h-max-screen w-max-full px-40 pt-8">{view === "dashboard" ? <Dashboard /> : <ProjectView />}</main>
+      <div className="flex h-screen flex-col overflow-hidden">
+        <RainbowCursor />
+        <TopNav view={view} onChange={setView} />
+        <main className="min-h-0 flex-1 overflow-hidden px-10 pt-10 pb-10">{view === "dashboard" ? <Dashboard /> : <ProjectView />}</main>
+      </div>
     </ReactLenis>
   );
 }

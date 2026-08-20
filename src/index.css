@@ -1,7 +1,5 @@
 @import 'tailwindcss';
 
-/* Paleta jako zmienne — etap 2 (toggle) podmieni tylko te wartości pod .light,
-   dzięki czemu w komponentach nie ma prefiksów dark:. */
 @theme {
   --color-base: #09090b;
   --color-surface: #121215;
@@ -16,12 +14,9 @@ html {
 }
 
 body {
-  /* Lenis steruje scrollem — natywny smooth by z nim walczył */
   scroll-behavior: auto;
 }
 
-/* Canvas kursora (cursor-effects) wstrzykuje się na koniec <body> bez z-index,
-   więc bez tego ogon chowa się pod sticky navem (z-40). */
 body > canvas {
   z-index: 50;
 }
