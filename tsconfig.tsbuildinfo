@@ -1,1 +1,1 @@
-{"root":["./src/app.tsx","./src/main.tsx","./src/components/dashboard.tsx","./src/components/rainbowcursor.tsx","./src/components/topnav.tsx"],"version":"5.9.3"}
+{"root":["./src/app.tsx","./src/main.tsx","./src/components/dashboard.tsx","./src/components/profil.tsx","./src/components/rainbowcursor.tsx","./src/components/skills.tsx","./src/components/topnav.tsx"],"version":"5.9.3"}
