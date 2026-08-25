@@ -260,7 +260,8 @@ export function Profil({ className = "", lang }: { className?: string; lang: Lan
             <span className="h-2.5 w-2.5 rounded-full bg-[#27c93f]" />
             <span className="text-muted ml-2 text-[11px]">profile.ts</span>
           </div>
-          <div ref={codeScrollRef} className="flex min-h-0 flex-1 overflow-auto overscroll-contain font-mono text-[11px] leading-relaxed md:text-xs md:leading-snug">
+          {/* data-lenis-prevent oddaje kółko natywnemu scrollowi tego boksu — bez tego Lenis przewija stronę */}
+          <div ref={codeScrollRef} data-lenis-prevent className="no-scrollbar flex min-h-0 flex-1 overflow-auto overscroll-contain font-mono text-[11px] leading-relaxed md:text-xs md:leading-snug">
             <div className="px-2 py-3 text-right text-[#5a5a5a] select-none md:py-2">
               {Array.from({ length: lineCount }, (_, i) => (
                 <div key={i}>{i + 1}</div>
@@ -273,7 +274,7 @@ export function Profil({ className = "", lang }: { className?: string; lang: Lan
           </div>
         </div>
 
-        <div className="border-line flex h-40 flex-none overflow-auto rounded-xl border bg-[#141414]">
+        <div data-lenis-prevent className="no-scrollbar border-line flex h-40 flex-none overflow-auto overscroll-contain rounded-xl border bg-[#141414]">
           <pre className="flex-1 px-3 py-3 font-mono text-[11px] leading-relaxed whitespace-pre md:py-2 md:text-xs md:leading-snug">
             <CodeLines lines={cmdLines} caret={codeDone && !cmdDone} caretChar="▊" />
             {cmdDone && <CodeLines lines={revealLines(TERM_OUT, total(TERM_OUT))} caret caretChar="▊" />}
