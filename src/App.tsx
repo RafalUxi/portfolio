@@ -2,7 +2,8 @@ import { useState } from "react";
 import { ReactLenis } from "lenis/react";
 import { TopNav, type View, type Lang } from "./components/TopNav";
 import { RainbowCursor } from "./components/RainbowCursor";
-import { Dashboard, ProjectView } from "./components/Dashboard";
+import { Dashboard } from "./components/Dashboard";
+import { ProjectView } from "./components/Project";
 
 export default function App() {
   const [view, setView] = useState<View>("dashboard");
@@ -11,10 +12,10 @@ export default function App() {
 
   return (
     <ReactLenis root>
-      <div className="flex h-screen flex-col overflow-hidden">
+      <div className="flex min-h-screen flex-col md:h-screen md:overflow-hidden">
         <RainbowCursor />
         <TopNav view={view} onChange={setView} lang={lang} onToggleLang={toggleLang} />
-        <main className="min-h-0 flex-1 overflow-hidden px-10 pt-10 pb-10">{view === "dashboard" ? <Dashboard lang={lang} /> : <ProjectView />}</main>
+        <main className="min-h-0 flex-1 px-4 py-6 md:overflow-hidden md:px-10 md:py-10">{view === "dashboard" ? <Dashboard lang={lang} /> : <ProjectView lang={lang} />}</main>
       </div>
     </ReactLenis>
   );

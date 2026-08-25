@@ -21,8 +21,30 @@ body > canvas {
   z-index: 50;
 }
 
-/* Twardy blink kursora terminala (step, nie fade) — bardziej "żywy terminal". */
 @keyframes blink {
   0%, 49% { opacity: 1; }
   50%, 100% { opacity: 0; }
+}
+
+/* Tylko opacity/transform — layout musi zostać nietknięty, bo fizyka klocków
+   i projekcja mapy mierzą swoje kontenery przy starcie. */
+@keyframes bento-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.bento > * {
+  animation: bento-in 0.55s cubic-bezier(0.22, 1, 0.36, 1) 0.05s both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bento > * {
+    animation: none;
+  }
 }

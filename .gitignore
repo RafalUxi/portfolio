@@ -1,6 +1,7 @@
 node_modules
 dist
 *.local
+tsconfig.tsbuildinfo
 To jest projekt rozmieszczenia mojej strony porfolio.docx
 CLAUDE.md
 appTest.js

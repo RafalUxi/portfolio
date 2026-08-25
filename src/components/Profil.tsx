@@ -1,25 +1,22 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import profilImg from "../../img/Profil.jpg";
 import type { Lang } from "./TopNav";
 
-// Tekst bio przełączany językiem. Kod i terminal ZOSTAJĄ po angielsku niezależnie od języka.
 const BIO: Record<Lang, { hi: string; role: string }> = {
   pl: { hi: "Cześć, nazywam się Rafał", role: "Full-stack developer & inżynier elektroniki" },
   en: { hi: "Hi, I'm Rafał", role: "Full-stack developer & electronics engineer" },
 };
 
-// Kolory składni w stylu VS Code Dark+. Kod/terminal to stałe assety "wrażeniowe",
-// więc tokeny koloruję ręcznie — bez ciągnięcia highlightera dla dwóch snippetów.
-// Token = [tekst, klucz-koloru]; brak klucza = plain.
 const SYNTAX: Record<string, string> = {
-  kw: "#569cd6", // słowa kluczowe: const, export, default
-  var: "#9cdcfe", // nazwy zmiennych / właściwości
-  str: "#ce9178", // stringi / template literale
-  fn: "#dcdcaa", // wywołania metod
-  p: "#d4d4d4", // interpunkcja / plain
-  prompt: "#27c93f", // znak zachęty $ w terminalu
-  cmd: "#e8e8ec", // wpisana komenda
-  out: "#b8b8bf", // wynik działania (stdout)
+  kw: "#569cd6",
+  var: "#9cdcfe",
+  str: "#ce9178",
+  fn: "#dcdcaa",
+  p: "#d4d4d4",
+  prompt: "#27c93f",
+  cmd: "#e8e8ec",
+  out: "#b8b8bf",
+  com: "#6a9955",
 };
 
 type Tok = [text: string, key?: keyof typeof SYNTAX];
@@ -133,7 +130,8 @@ const CODE: Tok[][] = [
   ],
 ];
 
-// Terminal: komenda WPISUJE się znak po znaku...
+const ART: Tok[][] = [[], [["//     +---+", "com"]], [["//    /   /|", "com"]], [["//   +---+ |  3D & Code", "com"]], [["//   |   | +", "com"]], [["//   +---+/", "com"]]];
+
 const TERM_CMD: Tok[][] = [
   [
     ["$ ", "prompt"],
@@ -141,15 +139,12 @@ const TERM_CMD: Tok[][] = [
   ],
 ];
 
-// ...a wynik POJAWIA się od razu (bez literowania), zakończony promptem z blokiem.
 const TERM_OUT: Tok[][] = [[], [["  Shipped: Monolit ", "out"]], [["  Now: Spring boot project", "out"]], [["  Stack: React · Three.js · Node · TypeScript", "out"]], [["  Status: open to work", "out"]], [], [["$ ", "prompt"]]];
 
-// Znaki = suma długości tokenów + po jednym na łamanie linii.
 const total = (lines: Tok[][]) => lines.reduce((s, l) => s + l.reduce((a, t) => a + t[0].length, 0), 0) + (lines.length - 1);
 const CODE_TOTAL = total(CODE);
 const CMD_TOTAL = total(TERM_CMD);
 
-// Czysta funkcja: zwraca linie z tokenami przyciętymi do `n` odsłoniętych znaków.
 function revealLines(lines: Tok[][], n: number): { text: string; key?: keyof typeof SYNTAX }[][] {
   let left = n;
   const out: { text: string; key?: keyof typeof SYNTAX }[][] = [];
@@ -163,13 +158,13 @@ function revealLines(lines: Tok[][], n: number): { text: string; key?: keyof typ
       left -= take;
     }
     out.push(lineOut);
-    if (li < lines.length - 1) left -= 1; // koszt łamania linii
+    if (li < lines.length - 1) left -= 1;
   }
   return out;
 }
 
 if (import.meta.env.DEV) {
-  for (const lines of [CODE, TERM_CMD, TERM_OUT]) {
+  for (const lines of [CODE, ART, TERM_CMD, TERM_OUT]) {
     const full = lines.map((l) => l.map((t) => t[0]).join("")).join("\n");
     const shown = revealLines(lines, total(lines))
       .map((l) => l.map((t) => t.text).join(""))
@@ -178,8 +173,6 @@ if (import.meta.env.DEV) {
   }
 }
 
-// Wpisywanie znak po znaku. `start=false` trzyma na 0 (bramka sekwencji), a
-// `startDelayMs` daje pauzę zanim ruszy — stąd komenda startuje "po chwili" od kodu.
 function useTypewriter(totalChars: number, charsPerSecond: number, start: boolean, startDelayMs: number): number {
   const [n, setN] = useState(0);
   useEffect(() => {
@@ -205,7 +198,6 @@ function useTypewriter(totalChars: number, charsPerSecond: number, start: boolea
   return n;
 }
 
-// Kursor: blok ▊ (terminal — "żyje", miga też po skończeniu) lub kreska ▋ (edytor).
 function CodeLines({ lines, caret, caretChar = "▋" }: { lines: { text: string; key?: keyof typeof SYNTAX }[][]; caret: boolean; caretChar?: string }) {
   return (
     <>
@@ -225,18 +217,35 @@ function CodeLines({ lines, caret, caretChar = "▋" }: { lines: { text: string;
 }
 
 export function Profil({ className = "", lang }: { className?: string; lang: Lang }) {
-  const codeN = useTypewriter(CODE_TOTAL, 100, true, 0);
+  const codeN = useTypewriter(CODE_TOTAL, 164, true, 0);
   const codeDone = codeN >= CODE_TOTAL;
   const cmdN = useTypewriter(CMD_TOTAL, 45, codeDone, 450);
   const cmdDone = cmdN >= CMD_TOTAL;
 
   const codeLines = revealLines(CODE, codeN);
   const cmdLines = revealLines(TERM_CMD, cmdN);
+  const artLines = codeDone ? revealLines(ART, total(ART)) : [];
+  // Numery linii rosną z odsłoniętą treścią; pełny gutter zawyżyłby scrollHeight
+  // i auto-scroll zjechałby na dół, zanim ruszy pierwsza linia
+  const lineCount = codeLines.length + artLines.length;
+
+  const codeScrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const el = codeScrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [codeN, codeDone]);
+
+  useEffect(() => {
+    if (!cmdDone) return;
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    codeScrollRef.current?.scrollTo({ top: 0, behavior: reduce ? "auto" : "smooth" });
+  }, [cmdDone]);
 
   return (
     <section className={`border-line bg-surface flex min-h-40 flex-col overflow-hidden rounded-2xl border md:min-h-0 ${className}`}>
-      <div className="flex items-center gap-3 p-4">
-        <img src={profilImg} alt="Rafał" className="h-16 w-16 shrink-0 rounded-xl object-cover md:h-40 md:w-40" />
+      <div className="flex items-center gap-3 p-4 md:items-center md:gap-2 md:p-3">
+        <img src={profilImg} alt="Rafał" className="h-32 w-32 shrink-0 rounded-xl object-cover md:aspect-square md:h-auto md:max-h-38 md:w-38" />
         <div className="min-w-0">
           <p className="text-fg text-md font-medium">{BIO[lang].hi}</p>
           <p className="text-muted text-xs">{BIO[lang].role}</p>
@@ -245,26 +254,27 @@ export function Profil({ className = "", lang }: { className?: string; lang: Lan
 
       <div className="mx-4 mb-4 flex min-h-0 flex-1 flex-col gap-3">
         <div className="border-line flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-[#1e1e1e]">
-          <div className="flex items-center gap-1.5 border-b border-[#333] px-3 py-2">
+          <div className="flex flex-none items-center gap-1.5 border-b border-[#333] px-3 py-2">
             <span className="h-2.5 w-2.5 rounded-full bg-[#ff5f56]" />
             <span className="h-2.5 w-2.5 rounded-full bg-[#ffbd2e]" />
             <span className="h-2.5 w-2.5 rounded-full bg-[#27c93f]" />
             <span className="text-muted ml-2 text-[11px]">profile.ts</span>
           </div>
-          <div className="flex min-h-0 flex-1 overflow-auto font-mono text-[11px] leading-relaxed md:text-xs">
-            <div className="px-2 py-3 text-right text-[#5a5a5a] select-none">
-              {CODE.map((_, i) => (
+          <div ref={codeScrollRef} className="flex min-h-0 flex-1 overflow-auto overscroll-contain font-mono text-[11px] leading-relaxed md:text-xs md:leading-snug">
+            <div className="px-2 py-3 text-right text-[#5a5a5a] select-none md:py-2">
+              {Array.from({ length: lineCount }, (_, i) => (
                 <div key={i}>{i + 1}</div>
               ))}
             </div>
-            <pre className="flex-1 py-3 pr-3 whitespace-pre">
+            <pre className="flex-1 py-3 pr-3 whitespace-pre md:py-2">
               <CodeLines lines={codeLines} caret={!codeDone} />
+              <CodeLines lines={artLines} caret={false} />
             </pre>
           </div>
         </div>
 
-        <div className="border-line flex h-48 flex-none overflow-auto rounded-xl border bg-[#141414]">
-          <pre className="flex-1 px-3 py-3 font-mono text-[11px] leading-relaxed whitespace-pre md:text-xs">
+        <div className="border-line flex h-40 flex-none overflow-auto rounded-xl border bg-[#141414]">
+          <pre className="flex-1 px-3 py-3 font-mono text-[11px] leading-relaxed whitespace-pre md:py-2 md:text-xs md:leading-snug">
             <CodeLines lines={cmdLines} caret={codeDone && !cmdDone} caretChar="▊" />
             {cmdDone && <CodeLines lines={revealLines(TERM_OUT, total(TERM_OUT))} caret caretChar="▊" />}
           </pre>

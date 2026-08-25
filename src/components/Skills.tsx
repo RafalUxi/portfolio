@@ -1,13 +1,42 @@
 import { useLayoutEffect, useMemo, useRef } from "react";
-import { Bodies, Composite, Engine, Events, Mouse, MouseConstraint, Runner, type Body } from "matter-js";
+import { Bodies, Body, Composite, Engine, Events, Mouse, MouseConstraint, Runner } from "matter-js";
+import type { Lang } from "./TopNav";
 
-// Finalną listę poda Rafał — łatwo edytować tutaj.
-const TECHS = ["React", "React Three Fiber", "Three.js", "Node.js", "Socket.IO", "TypeScript", "PostgreSQL", "Supabase", "Tailwind", "Git", "Blender", "Spring Boot"];
+type Size = "lg" | "sm" | "xs";
 
-// Każdy klocek inny kolor (paleta brand-inspired, indeks = pozycja w TECHS).
-const COLORS = ["#61DAFB", "#A855F7", "#F472B6", "#5FA04E", "#F59E0B", "#3178C6", "#4169E1", "#3ECF8E", "#38BDF8", "#F05032", "#EA7600", "#6DB33F"];
+const SIZE: Record<Size, string> = {
+  lg: "px-4 py-1.5 text-sm md:px-6 md:py-2 md:text-base",
+  sm: "px-3 py-1 text-xs md:px-4 md:py-1.5 md:text-sm",
+  xs: "px-2 py-0.5 text-[10px] md:px-2.5 md:py-1 md:text-xs",
+};
 
-// Dobór koloru tekstu pod kontrast (jasne tło → ciemny tekst i odwrotnie).
+const GROUPS: { legend: Record<Lang, string>; size: Size; tiles: { name: string; color: string; main?: boolean; text?: string }[] }[] = [
+  {
+    legend: { pl: "Dev stack", en: "Dev stack" },
+    size: "lg",
+    tiles: [
+      { name: "React", color: "#38BDF8", main: true },
+      { name: "TypeScript", color: "#38BDF8", main: true },
+      { name: "Tailwind", color: "#38BDF8", text: "#ffffff" },
+      { name: "React Three Fiber", color: "#A855F7", main: true },
+      { name: "Three.js", color: "#A855F7", main: true },
+      { name: "Blender", color: "#A855F7" },
+      { name: "Node.js", color: "#22C55E", main: true },
+      { name: "Socket.IO", color: "#22C55E" },
+      { name: "PostgreSQL", color: "#6366F1" },
+      { name: "Supabase", color: "#6366F1" },
+      { name: "Git", color: "#F97316" },
+    ],
+  },
+  { legend: { pl: "Elektronika", en: "Electronics" }, size: "sm", tiles: ["LTspice", "Inventor", "Eagle"].map((name) => ({ name, color: "#14B8A6" })) },
+  { legend: { pl: "Warstwa kreatywna", en: "Creative layer" }, size: "xs", tiles: ["DaVinci Resolve", "Affinity", "Unity", "Aseprite"].map((name) => ({ name, color: "#EC4899" })) },
+];
+
+const TILES = GROUPS.flatMap((g) => g.tiles.map((t) => ({ name: t.name, color: t.color, size: g.size, main: t.main ?? false, text: t.text ?? (t.main ? "#ffffff" : textOn(t.color)) })));
+
+const MAIN_RING = "#FFFFFF";
+const shadowFor = (main: boolean) => (main ? `0 0 0 2px ${MAIN_RING}, 0 4px 10px rgba(0,0,0,0.35)` : "0 4px 10px rgba(0,0,0,0.35)");
+
 function textOn(hex: string): string {
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);
@@ -15,21 +44,20 @@ function textOn(hex: string): string {
   return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.6 ? "#0b0b0d" : "#ffffff";
 }
 
-const WALL = 200; // grubość ścian (duża, żeby nic nie przeciekało przy rzucie)
+const WALL = 200;
+const PAD = 16;
 
-// Podłoga + dwie wysokie ściany boczne. Sufit celowo otwarty: klocki wpadają
-// z góry, a rzucone do góry wracają grawitacją (boki nie pozwalają uciec bokiem).
 function buildWalls(w: number, h: number): Body[] {
-  const opts = { isStatic: true };
+  const o = { isStatic: true };
   return [
-    Bodies.rectangle(w / 2, h + WALL / 2, w + 2 * WALL, WALL, opts),
-    Bodies.rectangle(-WALL / 2, h / 2, WALL, h + 6000, opts),
-    Bodies.rectangle(w + WALL / 2, h / 2, WALL, h + 6000, opts),
+    Bodies.rectangle(w / 2, h - PAD + WALL / 2, w, WALL, o),
+    Bodies.rectangle(w / 2, PAD - WALL / 2, w, WALL, o),
+    Bodies.rectangle(PAD - WALL / 2, h / 2, WALL, h, o),
+    Bodies.rectangle(w - PAD + WALL / 2, h / 2, WALL, h, o),
   ];
 }
 
-// Matter.Mouse dokleja listenery do elementu; zdejmujemy je ręcznie przy cleanupie
-// (StrictMode montuje efekt dwa razy — bez tego zostałyby zdublowane).
+// StrictMode montuje efekt dwa razy — bez ręcznego zdjęcia listenerów Matter.Mouse zostają zdublowane
 function detachMouse(mouse: Mouse) {
   const el = mouse.element as HTMLElement;
   const m = mouse as unknown as Record<string, EventListener>;
@@ -48,13 +76,13 @@ function detachMouse(mouse: Mouse) {
   }
 }
 
-export function Skills({ className = "" }: { className?: string }) {
+export function Skills({ className = "", lang }: { className?: string; lang: Lang }) {
   const arenaRef = useRef<HTMLDivElement>(null);
   const pillRefs = useRef<(HTMLDivElement | null)[]>([]);
   const reduced = useMemo(() => window.matchMedia("(prefers-reduced-motion: reduce)").matches, []);
 
   useLayoutEffect(() => {
-    if (reduced) return; // fallback = statyczne chipy, bez silnika
+    if (reduced) return;
     const arena = arenaRef.current;
     if (!arena) return;
 
@@ -66,6 +94,10 @@ export function Skills({ className = "" }: { className?: string }) {
     let walls: Body[] = [];
     const sizes: { w: number; h: number }[] = [];
     const bodies: Body[] = [];
+    const spawn: { x: number; y: number }[] = [];
+    const timeouts: number[] = [];
+
+    const prio = (t: (typeof TILES)[number]) => (t.main ? 0 : t.size === "lg" ? 1 : t.size === "sm" ? 2 : 3);
 
     const start = (w: number, h: number) => {
       started = true;
@@ -73,24 +105,31 @@ export function Skills({ className = "" }: { className?: string }) {
       engine.gravity.y = 1;
       const world = engine.world;
 
-      // Klocek = ciało o rozmiarze zmierzonego DOM-a; spawn nad kontenerem (rain-in).
-      TECHS.forEach((_, i) => {
+      let side = 0;
+      TILES.forEach((t, i) => {
         const el = pillRefs.current[i]!;
         const bw = el.offsetWidth;
         const bh = el.offsetHeight;
         sizes[i] = { w: bw, h: bh };
-        const x = bw / 2 + 6 + Math.random() * Math.max(1, w - bw - 12);
-        const y = -20 - Math.random() * (TECHS.length * 34); // wyżej = wpada później
-        bodies[i] = Bodies.rectangle(x, y, bw, bh, { restitution: 0.35, friction: 0.4, frictionAir: 0.02, chamfer: { radius: 10 } });
+        let x: number;
+        if (t.size === "lg") {
+          x = w / 2 + (Math.random() - 0.5) * w * 0.3;
+        } else {
+          const left = side++ % 2 === 0;
+          x = left ? PAD + bw / 2 + Math.random() * 16 : w - PAD - bw / 2 - Math.random() * 16;
+        }
+        x = Math.max(PAD + bw / 2, Math.min(w - PAD - bw / 2, x));
+        spawn[i] = { x, y: PAD + bh / 2 + Math.random() * Math.max(1, (h - 2 * PAD) * 0.15) };
+        bodies[i] = Bodies.rectangle(x, -500 - Math.random() * 200, bw, bh, { restitution: 0.35, friction: 0.4, frictionAir: 0.02, chamfer: { radius: 10 } });
       });
 
       walls = buildWalls(w, h);
-      Composite.add(world, [...walls, ...bodies]);
+      Composite.add(world, walls);
 
       mouse = Mouse.create(arena);
       const mc = MouseConstraint.create(engine, { mouse, constraint: { stiffness: 0.2, render: { visible: false } } });
       Composite.add(world, mc);
-      detachWheelOnly(mouse); // oddaj scroll kółkiem do Lenisa
+      detachWheelOnly(mouse);
 
       sync = () => {
         for (let i = 0; i < bodies.length; i++) {
@@ -101,14 +140,23 @@ export function Skills({ className = "" }: { className?: string }) {
         }
       };
       Events.on(engine, "afterUpdate", sync);
-      sync(); // pozycje startowe przed pierwszym paintem
+      sync();
 
       runner = Runner.create();
       Runner.run(runner, engine);
+
+      const order = TILES.map((_, i) => i).sort((a, b) => prio(TILES[a]) - prio(TILES[b]));
+      order.forEach((idx, k) => {
+        const id = window.setTimeout(() => {
+          Body.setPosition(bodies[idx], spawn[idx]);
+          Body.setVelocity(bodies[idx], { x: 0, y: 0 });
+          Composite.add(world, bodies[idx]);
+        }, k * 70);
+        timeouts.push(id);
+      });
     };
 
-    // Uruchom silnik gdy boks ma realny rozmiar (rAF-poll unika wyścigu z layoutem —
-    // initial callback ResizeObservera bywa niewiarygodny w niektórych środowiskach).
+    // rAF-poll zamiast initial callbacku ResizeObservera — ten bywa niewiarygodny
     let raf = 0;
     const tryStart = () => {
       const w = arena.clientWidth;
@@ -121,7 +169,6 @@ export function Skills({ className = "" }: { className?: string }) {
     };
     tryStart();
 
-    // Kolejne zmiany rozmiaru tylko przebudowują ściany — klocki zostają.
     const ro = new ResizeObserver(() => {
       if (!started) return;
       const w = arena.clientWidth;
@@ -135,6 +182,7 @@ export function Skills({ className = "" }: { className?: string }) {
 
     return () => {
       cancelAnimationFrame(raf);
+      timeouts.forEach((t) => clearTimeout(t));
       ro.disconnect();
       if (!started) return;
       Events.off(engine, "afterUpdate", sync);
@@ -146,29 +194,42 @@ export function Skills({ className = "" }: { className?: string }) {
   }, [reduced]);
 
   return (
-    <section className={`border-line bg-surface flex min-h-40 flex-col overflow-hidden rounded-2xl border md:min-h-0 ${className}`}>
-      <h2 className="text-fg p-4 pb-2 text-sm font-medium">Stack / Skills</h2>
+    <section className={`border-line bg-surface relative overflow-hidden rounded-2xl border ${className}`}>
+      <h2 className="sr-only">Stack &amp; Skills</h2>
+
+      <div className="pointer-events-none absolute top-3 left-3 z-20 flex flex-col gap-1.5 rounded-xl bg-black/40 px-3 py-2 backdrop-blur-sm">
+        {GROUPS.map((g) => (
+          <div key={g.legend.en} className="flex items-center gap-2">
+            <span className="flex gap-0.5">
+              {[...new Set(g.tiles.map((t) => t.color))].map((c) => (
+                <span key={c} style={{ backgroundColor: c }} className={`rounded-full ${g.size === "lg" ? "h-2.5 w-2.5" : g.size === "sm" ? "h-2 w-2" : "h-1.5 w-1.5"}`} />
+              ))}
+            </span>
+            <span className="text-xs font-medium text-white/85">{g.legend[lang]}</span>
+          </div>
+        ))}
+      </div>
 
       {reduced ? (
-        <div className="flex flex-wrap content-start gap-2 p-4 pt-2">
-          {TECHS.map((t, i) => (
-            <span key={t} style={{ backgroundColor: COLORS[i % COLORS.length], color: textOn(COLORS[i % COLORS.length]) }} className="rounded-lg px-3 py-1.5 text-base font-semibold shadow-md">
-              {t}
+        <div className="relative z-10 flex flex-wrap content-start gap-2 p-4">
+          {TILES.map((tile) => (
+            <span key={tile.name} style={{ backgroundColor: tile.color, color: tile.text, boxShadow: shadowFor(tile.main) }} className={`rounded-lg ${tile.main ? "font-bold" : "font-semibold"} ${SIZE[tile.size]}`}>
+              {tile.name}
             </span>
           ))}
         </div>
       ) : (
-        <div ref={arenaRef} className="relative min-h-0 flex-1 overflow-hidden">
-          {TECHS.map((t, i) => (
+        <div ref={arenaRef} className="absolute inset-0 z-10 overflow-hidden">
+          {TILES.map((tile, i) => (
             <div
-              key={t}
+              key={tile.name}
               ref={(el) => {
                 pillRefs.current[i] = el;
               }}
-              style={{ backgroundColor: COLORS[i % COLORS.length], color: textOn(COLORS[i % COLORS.length]) }}
-              className="absolute top-0 left-0 cursor-grab rounded-lg px-3 py-1.5 text-base font-semibold whitespace-nowrap shadow-md will-change-transform select-none active:cursor-grabbing"
+              style={{ backgroundColor: tile.color, color: tile.text, boxShadow: shadowFor(tile.main) }}
+              className={`absolute top-0 left-0 cursor-grab rounded-lg whitespace-nowrap will-change-transform select-none active:cursor-grabbing ${tile.main ? "font-bold" : "font-semibold"} ${SIZE[tile.size]}`}
             >
-              {t}
+              {tile.name}
             </div>
           ))}
         </div>
@@ -177,7 +238,6 @@ export function Skills({ className = "" }: { className?: string }) {
   );
 }
 
-// Zdejmij tylko listenery kółka (żeby Lenis mógł scrollować nad boksem).
 function detachWheelOnly(mouse: Mouse) {
   const el = mouse.element as HTMLElement;
   const m = mouse as unknown as Record<string, EventListener>;
