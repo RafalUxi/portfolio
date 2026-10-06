@@ -17,18 +17,24 @@ const GROUPS: { legend: Record<Lang, string>; size: Size; tiles: { name: string;
     tiles: [
       { name: "React", color: "#38BDF8", main: true },
       { name: "TypeScript", color: "#38BDF8", main: true },
+      { name: "Next.js", color: "#38BDF8", main: true },
       { name: "Tailwind", color: "#38BDF8", text: "#ffffff" },
       { name: "React Three Fiber", color: "#A855F7", main: true },
       { name: "Three.js", color: "#A855F7", main: true },
       { name: "Blender", color: "#A855F7" },
       { name: "Node.js", color: "#22C55E", main: true },
+      { name: "NestJS", color: "#22C55E", main: true },
+      { name: "MQTT", color: "#22C55E" },
       { name: "Socket.IO", color: "#22C55E" },
       { name: "PostgreSQL", color: "#6366F1" },
+      { name: "TimescaleDB", color: "#6366F1" },
+      { name: "Redis", color: "#6366F1" },
       { name: "Supabase", color: "#6366F1" },
+      { name: "Docker", color: "#F97316" },
       { name: "Git", color: "#F97316" },
     ],
   },
-  { legend: { pl: "Elektronika", en: "Electronics" }, size: "sm", tiles: ["LTspice", "Inventor", "Eagle"].map((name) => ({ name, color: "#14B8A6" })) },
+  { legend: { pl: "Elektronika", en: "Electronics" }, size: "sm", tiles: ["ESP32", "LTspice", "Inventor", "Eagle"].map((name) => ({ name, color: "#14B8A6" })) },
   { legend: { pl: "Warstwa kreatywna", en: "Creative layer" }, size: "xs", tiles: ["DaVinci Resolve", "Affinity", "Unity", "Aseprite"].map((name) => ({ name, color: "#EC4899" })) },
 ];
 
@@ -46,6 +52,13 @@ function textOn(hex: string): string {
 
 const WALL = 200;
 const PAD = 16;
+// Odstęp między zrzutami — na tyle duży, żeby klocek zdążył usiąść, zanim
+// spadnie następny, inaczej zderzają się w locie i rozjeżdżają stos.
+const DROP_STAGGER_MS = 110;
+// Tłumienie obrotu w fazie wsypywania: mnożnik prędkości kątowej na klatkę
+// i czas, po którym znika (liczony od ostatniego zrzutu).
+const SPIN_DAMP = 0.1;
+const SPIN_SETTLE_MS = 5000;
 
 function buildWalls(w: number, h: number): Body[] {
   const o = { isStatic: true };
@@ -96,8 +109,11 @@ export function Skills({ className = "", lang }: { className?: string; lang: Lan
     const bodies: Body[] = [];
     const spawn: { x: number; y: number }[] = [];
     const timeouts: number[] = [];
-
-    const prio = (t: (typeof TILES)[number]) => (t.main ? 0 : t.size === "lg" ? 1 : t.size === "sm" ? 2 : 3);
+    let damping = true;
+    const dampSpin = () => {
+      if (!damping) return;
+      for (const b of bodies) Body.setAngularVelocity(b, b.angularVelocity * SPIN_DAMP);
+    };
 
     const start = (w: number, h: number) => {
       started = true;
@@ -105,22 +121,23 @@ export function Skills({ className = "", lang }: { className?: string; lang: Lan
       engine.gravity.y = 1;
       const world = engine.world;
 
-      let side = 0;
-      TILES.forEach((t, i) => {
+      TILES.forEach((_, i) => {
         const el = pillRefs.current[i]!;
-        const bw = el.offsetWidth;
-        const bh = el.offsetHeight;
-        sizes[i] = { w: bw, h: bh };
-        let x: number;
-        if (t.size === "lg") {
-          x = w / 2 + (Math.random() - 0.5) * w * 0.3;
-        } else {
-          const left = side++ % 2 === 0;
-          x = left ? PAD + bw / 2 + Math.random() * 16 : w - PAD - bw / 2 - Math.random() * 16;
-        }
-        x = Math.max(PAD + bw / 2, Math.min(w - PAD - bw / 2, x));
+        sizes[i] = { w: el.offsetWidth, h: el.offsetHeight };
+      });
+      let sideFlip = 0;
+      TILES.forEach((t, i) => {
+        const { w: bw, h: bh } = sizes[i];
+        // Główny stack trzyma środkowe 40% toru, reszta leci w zewnętrzne pasy
+        // naprzemiennie w lewo i w prawo.
+        const span = Math.max(0, w - 2 * PAD - bw);
+        const frac = t.main ? 0.3 + Math.random() * 0.4 : sideFlip++ % 2 === 0 ? Math.random() * 0.28 : 0.72 + Math.random() * 0.28;
+        const x = PAD + bw / 2 + span * frac;
         spawn[i] = { x, y: PAD + bh / 2 + Math.random() * Math.max(1, (h - 2 * PAD) * 0.15) };
-        bodies[i] = Bodies.rectangle(x, -500 - Math.random() * 200, bw, bh, { restitution: 0.35, friction: 0.4, frictionAir: 0.02, chamfer: { radius: 10 } });
+        // Zaokrąglenie musi zmieścić się w połowie krótszego boku, inaczej Matter
+        // deformuje kształt kolizji — najniższe klocki mają tylko 19 px wysokości.
+        const radius = Math.min(10, Math.min(bw, bh) / 2 - 1);
+        bodies[i] = Bodies.rectangle(x, -500 - Math.random() * 200, bw, bh, { restitution: 0, friction: 0.8, frictionStatic: 1.2, frictionAir: 0.02, chamfer: { radius } });
       });
 
       walls = buildWalls(w, h);
@@ -130,6 +147,16 @@ export function Skills({ className = "", lang }: { className?: string; lang: Lan
       const mc = MouseConstraint.create(engine, { mouse, constraint: { stiffness: 0.2, render: { visible: false } } });
       Composite.add(world, mc);
       detachWheelOnly(mouse);
+
+      // Fizyka działa od pierwszej klatki — klocki mają normalną bezwładność i od
+      // razu reagują na mysz. Na czas wsypywania mocno tłumimy sam obrót, żeby
+      // nie rozkręciły się przy lądowaniu i nie stawały na sztorc; po SPIN_SETTLE_MS
+      // tłumienie znika i stos da się rozwalić.
+      Events.on(engine, "afterUpdate", dampSpin);
+      const dampId = window.setTimeout(() => {
+        damping = false;
+      }, TILES.length * DROP_STAGGER_MS + SPIN_SETTLE_MS);
+      timeouts.push(dampId);
 
       sync = () => {
         for (let i = 0; i < bodies.length; i++) {
@@ -145,13 +172,15 @@ export function Skills({ className = "", lang }: { className?: string; lang: Lan
       runner = Runner.create();
       Runner.run(runner, engine);
 
-      const order = TILES.map((_, i) => i).sort((a, b) => prio(TILES[a]) - prio(TILES[b]));
+      // Najszersze spadają pierwsze, więc lądują na dnie i tworzą podstawę;
+      // najwęższe schodzą na końcu i siadają na wierzchu.
+      const order = TILES.map((_, i) => i).sort((a, b) => sizes[b].w - sizes[a].w);
       order.forEach((idx, k) => {
         const id = window.setTimeout(() => {
           Body.setPosition(bodies[idx], spawn[idx]);
           Body.setVelocity(bodies[idx], { x: 0, y: 0 });
           Composite.add(world, bodies[idx]);
-        }, k * 70);
+        }, k * DROP_STAGGER_MS);
         timeouts.push(id);
       });
     };
@@ -186,6 +215,7 @@ export function Skills({ className = "", lang }: { className?: string; lang: Lan
       ro.disconnect();
       if (!started) return;
       Events.off(engine, "afterUpdate", sync);
+      Events.off(engine, "afterUpdate", dampSpin);
       Runner.stop(runner);
       detachMouse(mouse);
       Composite.clear(engine.world, false);

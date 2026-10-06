@@ -161,7 +161,7 @@ function ProjectDetail({ project, lang, fill = false }: { project: Project; lang
               <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-[#27c93f]" />
             </span>
             <span className="min-w-0 flex-1">
-              <span className="text-fg block text-sm font-medium">{T.playNow[lang]}</span>
+              <span className="text-fg block text-sm font-medium">{(project.liveLabel ?? T.playNow)[lang]}</span>
               <span className="text-muted block truncate font-mono text-xs">{live.replace(/^https?:\/\//, "").replace(/\/$/, "")}</span>
             </span>
             <FaArrowUpRightFromSquare aria-hidden className="text-muted group-hover:text-fg shrink-0 text-sm transition-colors" />

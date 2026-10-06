@@ -1,4 +1,8 @@
 import type { Lang } from "../components/TopNav";
+import platformaDashboard from "../projects/platforma/Dashboard.jpg";
+import platformaEsp32 from "../projects/platforma/esp32.jpg";
+import platformaEsp32Aht from "../projects/platforma/esp32-aht20.jpg";
+import platformaAht from "../projects/platforma/aht20.jpg";
 import monolitFilm from "../projects/monolit/monolitfilm.mp4";
 import monolitEq from "../projects/monolit/eqmonolit.webp";
 import monolitSklep from "../projects/monolit/sklepmonolit.webp";
@@ -39,6 +43,7 @@ export type Project = {
   decisions: Record<Lang, string>;
   stack: string[];
   links: { live?: string; code?: string; readme?: string; pdf?: string };
+  liveLabel?: Record<Lang, string>;
   video?: string;
   covers?: Shot[];
   coversClass?: string;
@@ -51,6 +56,39 @@ export type Project = {
 
 // Kolejność w tablicy = kolejność w drzewie; pierwszy jest domyślnie zaznaczony.
 export const PROJECTS: Project[] = [
+  {
+    slug: "telemetry",
+    category: "fullstack",
+    file: "telemetry.ts",
+    title: "Telemetry Platform",
+    blurb: {
+      pl: "Platforma telemetryczna: temperatura i wilgotność z ESP32 na moim biurku i z urządzeń symulowanych, przez MQTT do bazy szeregów czasowych i na dashboard.",
+      en: "A telemetry platform carrying temperature and humidity from an ESP32 on my desk and from simulated devices, over MQTT into a time-series database and onto a dashboard.",
+    },
+    decisions: {
+      pl: "Mosquitto to jedyne miejsce, którego dotyka urządzenie: każde dostaje własne konto z ACL na dokładnie jeden temat i przypięty client id, więc skradziony klucz pozwala pisać tylko jako to urządzenie. Proces ingest waliduje payload Zodem i wrzuca go na kolejkę, nie dotykając bazy — wolny zapis zapycha kolejkę, zamiast gubić wiadomości na brokerze, a duplikaty z QoS 1 zderzają się na kluczu głównym i są zliczane, nie traktowane jak błąd. Nad hypertable w TimescaleDB stoją agregaty godzinowe i dobowe, a zapytanie dobiera warstwę do długości okna, więc pełny rok wraca jako 365 wierszy zamiast 31 milionów, które za nimi stoją.",
+      en: "Mosquitto is the only place a device touches: each one gets its own account with an ACL for exactly one topic and a pinned client id, so a stolen credential can write as that device and nothing else. The ingest process validates the payload with Zod and pushes it onto a queue without ever touching the database, so a slow write backs up the queue instead of losing messages at the broker, and QoS 1 duplicates collide on the primary key and get counted rather than treated as failures. Hourly and daily continuous aggregates sit above the TimescaleDB hypertable and a query picks its layer from the length of the window, so a full year comes back as 365 rows instead of the 31 million behind them.",
+    },
+    stack: ["ESP32", "MQTT", "Node.js", "TypeScript", "Redis", "TimescaleDB", "NestJS", "Next.js", "React", "Docker"],
+    links: {
+      live: "https://panel.rafaltrzeciakowski.dev",
+      code: "https://github.com/RafalUxi/telemetry-platform",
+    },
+    liveLabel: { pl: "Otwórz panel", en: "Open the panel" },
+    covers: [{ src: platformaDashboard, alt: { pl: "Dashboard platformy telemetrycznej", en: "Telemetry platform dashboard" } }],
+    coversClass: "object-contain",
+    media: [
+      { src: platformaEsp32, alt: { pl: "Płytka ESP32", en: "ESP32 board" } },
+      { src: platformaEsp32Aht, alt: { pl: "ESP32 podłączony do czujnika AHT20", en: "ESP32 wired to the AHT20 sensor" } },
+      { src: platformaAht, alt: { pl: "Czujnik AHT20", en: "AHT20 sensor breakout" } },
+    ],
+    mediaClass: "object-contain md:brightness-[0.68]",
+    warning: {
+      pl: "Kliknij „Guest”, żeby wejść bez zakładania konta. Jedno z urządzeń na liście to ESP32 na moim biurku, reszta jest symulowana.",
+      en: "Click “Guest” to look around without an account. One of the devices in the list is an ESP32 on my desk; the rest are simulated.",
+    },
+    status: "shipped",
+  },
   {
     slug: "monolit",
     category: "fullstack",

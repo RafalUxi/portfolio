@@ -1,11 +1,70 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { geoMercator, geoPath, geoContains } from "d3-geo";
-import { FaLocationDot, FaAward } from "react-icons/fa6";
+import { FaLocationDot, FaAward, FaArrowUpRightFromSquare, FaRegCopy, FaCheck, FaHandPointer, FaThumbtack } from "react-icons/fa6";
 import type { Feature, FeatureCollection } from "geojson";
 import type { Lang } from "./TopNav";
 import plDeData from "../data/pl-de.json";
 
 const PLDE = plDeData as unknown as FeatureCollection;
+
+const COPY: Record<Lang, string> = { pl: "Kopiuj DOI", en: "Copy DOI" };
+const COPIED: Record<Lang, string> = { pl: "Skopiowano", en: "Copied" };
+const OPEN_PAPER: Record<Lang, string> = { pl: "Otwórz stronę artykułu", en: "Open the paper page" };
+const HINT_CLICK: Record<Lang, string> = { pl: "Kliknij punkt, aby przypiąć panel", en: "Click the point to pin this panel" };
+const HINT_PINNED: Record<Lang, string> = { pl: "Przypięte — kliknij punkt ponownie, aby zamknąć", en: "Pinned — click the point again to close" };
+
+function PaperRow({ paper, lang }: { paper: Paper; lang: Lang }) {
+  const doiRef = useRef<HTMLElement>(null);
+  const [done, setDone] = useState(false);
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(paper.doi);
+      setDone(true);
+      window.setTimeout(() => setDone(false), 1500);
+    } catch {
+      // Schowek bywa odmówiony (brak fokusu, starsza przeglądarka) — wtedy
+      // zaznaczamy DOI, żeby dało się go skopiować ręcznie zamiast nic nie robić.
+      const el = doiRef.current;
+      if (!el) return;
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      const sel = window.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(range);
+    }
+  };
+
+  return (
+    <li>
+      <div className="text-muted text-[10px] tracking-wide uppercase">{paper.role[lang]}</div>
+      <div className="flex items-center gap-1">
+        <code ref={doiRef} className="text-fg pointer-events-auto min-w-0 flex-1 truncate font-mono text-[10px] select-all">
+          {paper.doi}
+        </code>
+        <button
+          type="button"
+          onClick={copy}
+          title={done ? COPIED[lang] : COPY[lang]}
+          aria-label={done ? COPIED[lang] : COPY[lang]}
+          className={`pointer-events-auto shrink-0 rounded p-1 transition-colors ${done ? "text-[#27c93f]" : "text-muted hover:text-fg"}`}
+        >
+          {done ? <FaCheck aria-hidden /> : <FaRegCopy aria-hidden />}
+        </button>
+        <a
+          href={paper.url}
+          target="_blank"
+          rel="noreferrer"
+          title={OPEN_PAPER[lang]}
+          aria-label={OPEN_PAPER[lang]}
+          className="text-muted hover:text-fg pointer-events-auto shrink-0 rounded p-1 transition-colors"
+        >
+          <FaArrowUpRightFromSquare aria-hidden />
+        </a>
+      </div>
+    </li>
+  );
+}
 
 const PAD = 16;
 const STEP = 11;
@@ -26,7 +85,8 @@ type L = Record<Lang, string>;
 const t = (pl: string, en: string): L => ({ pl, en });
 const d = (s: string): L => ({ pl: s, en: s });
 
-type Entry = { title: L; org: L; period: L; highlight?: boolean };
+type Paper = { role: L; doi: string; url: string };
+type Entry = { title: L; org: L; period: L; highlight?: boolean; papers?: Paper[] };
 type Point = { id: string; city: L; country: "PL" | "DE"; lat: number; lng: number; entries: Entry[] };
 const POINTS: Point[] = [
   {
@@ -54,13 +114,23 @@ const POINTS: Point[] = [
     entries: [
       { title: t("Elektronika i Telekomunikacja (inż.)", "Electronics and Telecommunications (BEng)"), org: t("Politechnika Wrocławska", "Wrocław Tech"), period: t("paź 2021 – sty 2025", "Oct 2021 – Jan 2025") },
       { title: t("Elektroniczne Systemy Mechatroniki (mgr)", "Electronic Mechatronic Systems (MSc)"), org: t("Politechnika Wrocławska", "Wrocław Tech"), period: t("mar 2025 – lip 2026", "Mar 2025 – Jul 2026") },
-      { title: t("Publikacja naukowa (Konferencja)", "Conference paper"), org: d("Eurosensors 2025"), period: t("7–10 wrz 2025", "7–10 Sep 2025"), highlight: true },
+      {
+        title: t("Publikacja naukowa (Konferencja)", "Conference paper"),
+        org: d("Eurosensors 2025"),
+        period: t("7–10 wrz 2025", "7–10 Sep 2025"),
+        highlight: true,
+        papers: [
+          { role: t("autor", "author"), doi: "10.5162/EUROSENSORS2025/MP60", url: "https://www.ama-science.org/proceedings/details/6288" },
+          { role: t("współautor", "co-author"), doi: "10.5162/EUROSENSORS2025/SP2.3", url: "https://www.ama-science.org/proceedings/details/6111" },
+        ],
+      },
     ],
   },
 ];
 
 export function ExperienceMap({ className = "", lang }: { className?: string; lang: Lang }) {
   const wrapRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState<{ w: number; h: number } | null>(null);
   const [hovered, setHovered] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -115,10 +185,27 @@ export function ExperienceMap({ className = "", lang }: { className?: string; la
   }, [size]);
 
   const activeId = hovered ?? selected;
+  // Panel ma pointer-events: none, więc nie dostanie mouseleave — zamiast tego
+  // sprawdzamy pozycję kursora względem jego prostokąta. Pinezki leżą wewnątrz
+  // tego prostokąta, więc przejazd z kropki na panel nie ma martwej strefy.
+  const onMove = (e: React.MouseEvent) => {
+    if (hovered === null) return;
+    const el = panelRef.current;
+    if (el) {
+      const r = el.getBoundingClientRect();
+      if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) return;
+    }
+    if ((e.target as Element)?.closest?.("[data-pin]")) return;
+    setHovered(null);
+  };
+
+  // Przypięty = pokazywany punkt to ten kliknięty. Nie sprawdzamy braku hoveru,
+  // bo dotyk syntezuje mouseover i na telefonie panel wyglądałby na nieprzypięty.
+  const pinned = selected !== null && selected === activeId;
   const activePoint = POINTS.find((p) => p.id === activeId) ?? null;
 
   return (
-    <section className={`border-line bg-surface relative min-h-40 overflow-hidden rounded-2xl border md:min-h-0 ${className}`}>
+    <section onMouseMove={onMove} onMouseLeave={() => setHovered(null)} className={`border-line bg-surface relative min-h-40 overflow-hidden rounded-2xl border md:min-h-0 ${className}`}>
       <h2 className="text-muted pointer-events-none absolute top-3 left-4 z-10 text-sm font-medium">{TITLE[lang]}</h2>
 
       <div ref={wrapRef} className="absolute inset-0">
@@ -145,9 +232,9 @@ export function ExperienceMap({ className = "", lang }: { className?: string; la
                   key={m.id}
                   tabIndex={0}
                   role="button"
+                  data-pin={m.id}
                   aria-pressed={isSel}
                   onMouseEnter={() => setHovered(m.id)}
-                  onMouseLeave={() => setHovered(null)}
                   onFocus={() => setHovered(m.id)}
                   onBlur={() => setHovered(null)}
                   onClick={(e) => {
@@ -177,7 +264,7 @@ export function ExperienceMap({ className = "", lang }: { className?: string; la
       </div>
 
       {activePoint && (
-        <div className="border-line bg-base/95 pointer-events-none absolute bottom-3 left-1/2 z-20 w-[calc(100%-1.5rem)] max-w-xs -translate-x-1/2 rounded-2xl border p-4 shadow-2xl backdrop-blur">
+        <div ref={panelRef} className="border-line bg-base/95 pointer-events-none absolute bottom-3 left-1/2 z-20 w-[calc(100%-1.5rem)] max-w-xs -translate-x-1/2 rounded-2xl border p-4 shadow-2xl backdrop-blur">
           <div className="flex items-center gap-2">
             <FaLocationDot aria-hidden className="shrink-0 text-[#f59e0b]" />
             <span className="text-fg text-sm font-semibold">
@@ -202,10 +289,21 @@ export function ExperienceMap({ className = "", lang }: { className?: string; la
                       {period}
                     </div>
                   )}
+                  {e.papers && (
+                    <ul className="mt-2 space-y-2">
+                      {e.papers.map((paper) => (
+                        <PaperRow key={paper.doi} paper={paper} lang={lang} />
+                      ))}
+                    </ul>
+                  )}
                 </li>
               );
             })}
           </ul>
+          <div className={`border-line mt-3 flex items-center gap-1.5 border-t pt-2 text-[10px] ${pinned ? "text-[#f59e0b]" : "text-muted"}`}>
+            {pinned ? <FaThumbtack aria-hidden className="shrink-0" /> : <FaHandPointer aria-hidden className="shrink-0" />}
+            <span>{pinned ? HINT_PINNED[lang] : HINT_CLICK[lang]}</span>
+          </div>
         </div>
       )}
     </section>
